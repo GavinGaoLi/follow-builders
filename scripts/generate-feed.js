@@ -1118,6 +1118,21 @@ async function main() {
   if (errors.length > 0) {
     console.error(`  ${errors.length} non-fatal errors`);
   }
+
+  // Post-generation: generate and send Telegram digest
+  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    console.error("Generating Telegram digest...");
+    const { execSync } = await import("child_process");
+    try {
+      execSync("node send-telegram-digest.js", {
+        cwd: SCRIPT_DIR,
+        stdio: "inherit",
+        timeout: 180_000,
+      });
+    } catch (e) {
+      console.error("Telegram digest failed (non-fatal):", e.message);
+    }
+  }
 }
 
 main().catch((err) => {
