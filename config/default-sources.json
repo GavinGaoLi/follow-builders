@@ -73,6 +73,16 @@
     { "name": "Dan Shipper", "handle": "danshipper" },
     { "name": "Aditya Agarwal", "handle": "adityaag" },
     { "name": "Sam Altman", "handle": "sama" },
-    { "name": "Claude", "handle": "claudeai" }
+    { "name": "Claude", "handle": "claudeai" },
+    { "name": "Dario Amodei", "handle": "DarioAmodei" },
+    { "name": "Demis Hassabis", "handle": "demaborhassabis" },
+    { "name": "Ilya Sutskever", "handle": "ilyasut" },
+    { "name": "Yann LeCun", "handle": "ylecun" },
+    { "name": "Fei-Fei Li", "handle": "drfeifei" },
+    { "name": "Logan Kilpatrick", "handle": "OfficialLoganK" },
+    { "name": "Simon Willison", "handle": "simonw" },
+    { "name": "Harrison Chase", "handle": "hwchase17" },
+    { "name": "Emad Mostaque", "handle": "EMostaque" },
+    { "name": "Li Mu", "handle": "mli_zju" }
   ]
 }

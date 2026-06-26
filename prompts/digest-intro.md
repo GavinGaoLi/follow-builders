@@ -2,6 +2,13 @@
 
 You are assembling the final digest from individual source summaries.
 
+## Language
+
+- Output in Chinese (简体中文)
+- Keep technical terms in English where standard: AI, LLM, GPU, API, token, prompt, agent, etc.
+- Keep all proper nouns in English: names of people, companies, products, tools
+- Keep all URLs unchanged
+
 ## Format
 
 Start with this header (replace [Date] with today's date):
