@@ -3,13 +3,13 @@
 // ============================================================================
 // Follow Builders — Telegram Digest Sender
 // ============================================================================
-// Reads feed JSON files, generates a Chinese summary via LLM, and sends
+// Reads feed JSON files, generates a Chinese summary via GLM-5.2, and sends
 // to Telegram. Designed to run in GitHub Actions after feed generation.
 //
 // Env vars needed:
-//   LLM_API_KEY       — API key for the LLM (DeepSeek or OpenAI-compatible)
-//   LLM_BASE_URL      — LLM API base URL (default: https://api.deepseek.com)
-//   LLM_MODEL         — LLM model name (default: deepseek-chat)
+//   GLM_API_KEY        — API key for bblabu (GLM-5.2)
+//   GLM_BASE_URL       — API base URL (default: https://api.bblabu.cn/v1)
+//   GLM_MODEL          — Model name (default: glm-5.2)
 //   TELEGRAM_BOT_TOKEN — Telegram bot token
 //   TELEGRAM_CHAT_ID   — Telegram chat ID to send to
 // ============================================================================
@@ -45,7 +45,6 @@ async function readText(path) {
 
 function formatDate() {
   const now = new Date();
-  // Beijing time (UTC+8)
   const bj = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const y = bj.getUTCFullYear();
   const m = String(bj.getUTCMonth() + 1).padStart(2, "0");
@@ -55,10 +54,10 @@ function formatDate() {
   return `${y}-${m}-${d} 周${w}`;
 }
 
-// -- LLM Call ----------------------------------------------------------------
+// -- GLM-5.2 Call -----------------------------------------------------------
 
-async function callLLM(prompt, apiKey, baseUrl, model) {
-  const url = `${baseUrl}/v1/chat/completions`;
+async function callGLM(prompt, apiKey, baseUrl, model) {
+  const url = `${baseUrl}/chat/completions`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -78,11 +77,12 @@ async function callLLM(prompt, apiKey, baseUrl, model) {
       temperature: 0.3,
       max_tokens: 4000,
     }),
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`LLM API error ${res.status}: ${text}`);
+    throw new Error(`GLM API error ${res.status}: ${text}`);
   }
 
   const data = await res.json();
@@ -107,21 +107,20 @@ async function sendTelegram(text, botToken, chatId) {
   }
 
   for (const chunk of chunks) {
-    const res = await fetch(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-          disable_web_page_preview: true,
-        }),
-      },
-    );
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: chunk,
+        disable_web_page_preview: true,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(`Telegram error: ${err.description}`);
+      throw new Error(`Telegram error: ${err.description || res.status}`);
     }
     if (chunks.length > 1) await new Promise((r) => setTimeout(r, 500));
   }
@@ -142,7 +141,6 @@ function buildPrompt(feedX, feedPodcasts, feedBlogs, prompts) {
   parts.push("- 不要使用 @ 符号提及用户名（在 Telegram 会变成链接）");
   parts.push("- 总字数控制在 2000 字以内\n");
 
-  // Add tweet data
   if (feedX?.x?.length > 0) {
     parts.push("## X/Twitter 动态\n");
     for (const builder of feedX.x) {
@@ -156,7 +154,6 @@ function buildPrompt(feedX, feedPodcasts, feedBlogs, prompts) {
     }
   }
 
-  // Add blog data
   if (feedBlogs?.blogs?.length > 0) {
     parts.push("## 博客文章\n");
     for (const blog of feedBlogs.blogs) {
@@ -168,7 +165,6 @@ function buildPrompt(feedX, feedPodcasts, feedBlogs, prompts) {
     }
   }
 
-  // Add podcast data
   if (feedPodcasts?.podcasts?.length > 0) {
     parts.push("## 播客\n");
     for (const pod of feedPodcasts.podcasts) {
@@ -181,7 +177,6 @@ function buildPrompt(feedX, feedPodcasts, feedBlogs, prompts) {
     }
   }
 
-  // Add specific prompt instructions if available
   if (prompts?.summarize_tweets) {
     parts.push("\n## 推特总结指引\n" + prompts.summarize_tweets);
   }
@@ -198,31 +193,27 @@ function buildPrompt(feedX, feedPodcasts, feedBlogs, prompts) {
 // -- Main --------------------------------------------------------------------
 
 async function main() {
-  const apiKey = process.env.LLM_API_KEY;
+  const apiKey = process.env.GLM_API_KEY;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  const baseUrl = process.env.LLM_BASE_URL || "https://api.deepseek.com";
-  const model = process.env.LLM_MODEL || "deepseek-chat";
+  const baseUrl = process.env.GLM_BASE_URL || "https://api.bblabu.cn/v1";
+  const model = process.env.GLM_MODEL || "glm-5.2";
 
   if (!apiKey) {
-    console.error("LLM_API_KEY not set — skipping digest generation");
+    console.error("GLM_API_KEY not set — skipping digest generation");
     process.exit(0);
   }
   if (!botToken || !chatId) {
-    console.error(
-      "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping",
-    );
+    console.error("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping");
     process.exit(0);
   }
 
-  // Load feeds
   const [feedX, feedPodcasts, feedBlogs] = await Promise.all([
     readJSON(FEED_X_PATH),
     readJSON(FEED_PODCASTS_PATH),
     readJSON(FEED_BLOGS_PATH),
   ]);
 
-  // Check if we have any content
   const hasTweets = feedX?.x?.length > 0;
   const hasPodcasts = feedPodcasts?.podcasts?.length > 0;
   const hasBlogs = feedBlogs?.blogs?.length > 0;
@@ -232,52 +223,38 @@ async function main() {
     process.exit(0);
   }
 
-  // Load prompts
   const prompts = {};
-  for (const name of [
-    "summarize-tweets",
-    "summarize-blogs",
-    "summarize-podcast",
-  ]) {
+  for (const name of ["summarize-tweets", "summarize-blogs", "summarize-podcast"]) {
     const key = name.replace(/-/g, "_");
     prompts[key] = await readText(join(PROMPTS_DIR, `${name}.md`));
   }
 
-  // Build prompt and call LLM
-  console.log("Generating digest via LLM...");
+  console.log(`Generating digest via ${model}...`);
   const prompt = buildPrompt(feedX, feedPodcasts, feedBlogs, prompts);
 
   let summary;
   try {
-    summary = await callLLM(prompt, apiKey, baseUrl, model);
+    summary = await callGLM(prompt, apiKey, baseUrl, model);
   } catch (err) {
-    console.error(`LLM call failed: ${err.message}`);
-    // Fallback: send a simple summary without LLM
-    summary = `⚠️ AI 摘要生成失败，以下是原始统计：\n`;
-    if (hasTweets)
-      summary += `🐦 ${feedX.x.length} 位建造者，${feedX.stats?.totalTweets || 0} 条推文\n`;
-    if (hasBlogs)
-      summary += `📝 ${feedBlogs.blogs.length} 篇博客文章\n`;
-    if (hasPodcasts)
-      summary += `🎙️ ${feedPodcasts.podcasts.length} 期播客\n`;
+    console.error(`GLM call failed: ${err.message}`);
+    summary = `⚠️ 摘要生成失败：${err.message.slice(0, 100)}\n\n原始统计：\n`;
+    if (hasTweets) summary += `🐦 ${feedX.x.length} 位建造者\n`;
+    if (hasBlogs) summary += `📝 ${feedBlogs.blogs.length} 篇博客\n`;
+    if (hasPodcasts) summary += `🎙️ ${feedPodcasts.podcasts.length} 期播客\n`;
   }
 
   if (!summary || summary.trim().length === 0) {
-    console.log("LLM returned empty summary — skipping");
+    console.log("Empty summary — skipping");
     process.exit(0);
   }
 
-  // Add header
-  const header = `🏗️ AI 建造者日报 — ${formatDate()}\n\n`;
-  const fullMessage = header + summary;
-
-  // Send to Telegram
+  const fullMessage = `🏗️ AI 建造者日报 — ${formatDate()}\n\n${summary}`;
   console.log(`Sending to Telegram (chat_id: ${chatId})...`);
   await sendTelegram(fullMessage, botToken, chatId);
-  console.log("✅ Digest sent successfully!");
+  console.log("✅ Digest sent!");
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err.message);
+  console.error("Fatal:", err.message);
   process.exit(1);
 });
